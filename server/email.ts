@@ -1,41 +1,98 @@
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
+import { google } from 'googleapis';
 
-// Email provider types
-type EmailProvider = 'resend' | 'gmail' | 'none';
+type EmailProvider = 'gmail_api' | 'gmail_smtp' | 'resend' | 'none';
 
-// Detect available email provider
 function detectEmailProvider(): EmailProvider {
-  // Debug logging
   console.log('Email provider detection:');
-  console.log('  RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET');
+  console.log('  GMAIL_CLIENT_ID:', process.env.GMAIL_CLIENT_ID ? 'SET' : 'NOT SET');
+  console.log('  GMAIL_CLIENT_SECRET:', process.env.GMAIL_CLIENT_SECRET ? 'SET' : 'NOT SET');
+  console.log('  GMAIL_REFRESH_TOKEN:', process.env.GMAIL_REFRESH_TOKEN ? 'SET' : 'NOT SET');
   console.log('  GMAIL_USER:', process.env.GMAIL_USER ? process.env.GMAIL_USER : 'NOT SET');
-  console.log('  GMAIL_APP_PASSWORD:', process.env.GMAIL_APP_PASSWORD ? 'SET (length: ' + process.env.GMAIL_APP_PASSWORD.length + ')' : 'NOT SET');
+  console.log('  GMAIL_APP_PASSWORD:', process.env.GMAIL_APP_PASSWORD ? 'SET' : 'NOT SET');
+  console.log('  RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET');
 
-  // Check for Resend API key (preferred for portability)
-  if (process.env.RESEND_API_KEY) {
-    return 'resend';
+  if (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN && process.env.GMAIL_USER) {
+    return 'gmail_api';
   }
 
-  // Check for Gmail credentials
   if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    return 'gmail';
+    return 'gmail_smtp';
+  }
+
+  if (process.env.RESEND_API_KEY) {
+    return 'resend';
   }
 
   return 'none';
 }
 
-// Get Gmail transporter
+async function sendViaGmailAPI(
+  to: string,
+  username: string,
+  otp: string,
+  subject: string
+): Promise<boolean> {
+  try {
+    const OAuth2 = google.auth.OAuth2;
+    const oauth2Client = new OAuth2(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      'https://developers.google.com/oauthplayground'
+    );
+
+    oauth2Client.setCredentials({
+      refresh_token: process.env.GMAIL_REFRESH_TOKEN
+    });
+
+    const accessToken = await oauth2Client.getAccessToken();
+
+    if (!accessToken.token) {
+      throw new Error('Failed to get access token');
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        type: 'OAuth2',
+        user: process.env.GMAIL_USER,
+        clientId: process.env.GMAIL_CLIENT_ID,
+        clientSecret: process.env.GMAIL_CLIENT_SECRET,
+        refreshToken: process.env.GMAIL_REFRESH_TOKEN,
+        accessToken: accessToken.token
+      }
+    });
+
+    const mailOptions = {
+      from: `"Daily Tracker" <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html: getEmailHTML(username, otp),
+      text: `Hello ${username},\n\nYour OTP code is: ${otp}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nDaily Tracker Team`,
+    };
+
+    console.log(`Sending email via Gmail API to ${to}...`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`OTP email sent successfully via Gmail API to ${to}`);
+    console.log(`Message ID: ${info.messageId}`);
+    return true;
+  } catch (error: any) {
+    console.error(`Gmail API send failed:`, error.message);
+    console.error(`Full error:`, error);
+    return false;
+  }
+}
+
 function getGmailTransporter() {
   const gmailUser = process.env.GMAIL_USER;
-  // Remove any spaces from the app password (Google shows them with spaces)
   const gmailPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, '');
 
   if (!gmailUser || !gmailPassword) {
     throw new Error('Gmail credentials not configured');
   }
 
-  console.log('📧 Gmail Config:');
+  console.log('Gmail SMTP Config:');
   console.log('   User:', gmailUser);
   console.log('   Password length:', gmailPassword.length, '(should be 16)');
 
@@ -50,11 +107,44 @@ function getGmailTransporter() {
       user: gmailUser,
       pass: gmailPassword,
     },
-    debug: true
+    debug: false
   });
 }
 
-// Send email via Resend
+async function sendViaGmailSMTP(
+  to: string,
+  username: string,
+  otp: string,
+  subject: string
+): Promise<boolean> {
+  try {
+    const transporter = getGmailTransporter();
+    const mailOptions = {
+      from: `"Daily Tracker" <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html: getEmailHTML(username, otp),
+      text: `Hello ${username},\n\nYour OTP code is: ${otp}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nDaily Tracker Team`,
+    };
+
+    console.log(`Attempting to send email via Gmail SMTP to ${to}...`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`OTP email sent successfully via Gmail SMTP to ${to}`);
+    console.log(`Message ID: ${info.messageId}`);
+    return true;
+  } catch (error: any) {
+    console.error(`Gmail SMTP send failed:`, error.message);
+
+    if (error.code === 'EAUTH') {
+      console.error(`  Authentication failed. Check GMAIL_USER and GMAIL_APP_PASSWORD`);
+    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      console.error(`  Connection failed. SMTP ports may be blocked on this platform.`);
+    }
+
+    return false;
+  }
+}
+
 async function sendViaResend(
   to: string,
   username: string,
@@ -76,7 +166,7 @@ async function sendViaResend(
       return false;
     }
 
-    console.log(`✓ OTP email sent successfully via Resend to ${to}`);
+    console.log(`OTP email sent successfully via Resend to ${to}`);
     return true;
   } catch (error: any) {
     console.error('Resend send failed:', error.message);
@@ -84,44 +174,6 @@ async function sendViaResend(
   }
 }
 
-// Send email via Gmail
-async function sendViaGmail(
-  to: string,
-  username: string,
-  otp: string,
-  subject: string
-): Promise<boolean> {
-  try {
-    const transporter = getGmailTransporter();
-    const mailOptions = {
-      from: `"Daily Tracker" <${process.env.GMAIL_USER}>`,
-      to,
-      subject,
-      html: getEmailHTML(username, otp),
-      text: `Hello ${username},\n\nYour OTP code is: ${otp}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nDaily Tracker Team`,
-    };
-
-    console.log(`📧 Attempting to send email to ${to}...`);
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ OTP email sent successfully via Gmail to ${to}`);
-    console.log(`✓ Message ID: ${info.messageId}`);
-    return true;
-  } catch (error: any) {
-    console.error(`❌ Gmail send failed:`, error.message);
-    console.error(`Full error:`, error);
-
-    if (error.code === 'EAUTH') {
-      console.error(`  → Authentication failed. Check GMAIL_USER and GMAIL_APP_PASSWORD`);
-      console.error(`  → Make sure 2-Step Verification is enabled and App Password is valid`);
-    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
-      console.error(`  → Connection failed. Check internet connection.`);
-    }
-
-    return false;
-  }
-}
-
-// Get email HTML template
 function getEmailHTML(username: string, otp: string): string {
   return `
     <!DOCTYPE html>
@@ -164,7 +216,6 @@ function getEmailHTML(username: string, otp: string): string {
   `;
 }
 
-// Main function to send OTP email with automatic provider detection
 export async function sendOTPEmail(
   to: string,
   username: string,
@@ -175,56 +226,53 @@ export async function sendOTPEmail(
 
   console.log(`Attempting to send OTP to ${to} using provider: ${provider}`);
 
-  // Try providers in order of preference
-  if (provider === 'resend') {
-    const success = await sendViaResend(to, username, otp, subject);
-    if (success) return true;
-
-    // If Resend fails, try Gmail as fallback
-    console.log('Resend failed, trying Gmail as fallback...');
-    if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-      return await sendViaGmail(to, username, otp, subject);
-    }
-  } else if (provider === 'gmail') {
-    return await sendViaGmail(to, username, otp, subject);
+  if (provider === 'gmail_api') {
+    return await sendViaGmailAPI(to, username, otp, subject);
+  } else if (provider === 'gmail_smtp') {
+    return await sendViaGmailSMTP(to, username, otp, subject);
+  } else if (provider === 'resend') {
+    return await sendViaResend(to, username, otp, subject);
   }
 
-  // No provider available
-  console.error('✗ Failed to send OTP: No email provider configured');
+  console.error('Failed to send OTP: No email provider configured');
   console.error('Please configure one of the following:');
-  console.error('  Option 1 (Recommended): Add RESEND_API_KEY to environment');
-  console.error('  Option 2: Add GMAIL_USER and GMAIL_APP_PASSWORD to environment');
+  console.error('  Option 1 (Best for Render): GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN + GMAIL_USER');
+  console.error('  Option 2 (Local only): GMAIL_USER + GMAIL_APP_PASSWORD');
+  console.error('  Option 3: RESEND_API_KEY');
   return false;
 }
 
-// Verify email configuration on startup (non-blocking)
 export async function verifyEmailConfig(): Promise<void> {
+  const hasGmailAPI = !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN);
+  const hasGmailSMTP = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
   const hasResend = !!process.env.RESEND_API_KEY;
-  const hasGmail = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
 
-  if (!hasResend && !hasGmail) {
-    console.warn('\n⚠️  Email provider not configured - OTP emails will fail');
+  if (!hasGmailAPI && !hasGmailSMTP && !hasResend) {
+    console.warn('\nEmail provider not configured - OTP emails will fail');
     console.warn('To enable OTP email functionality, configure one of:');
-    console.warn('  • RESEND_API_KEY (recommended for portability)');
-    console.warn('  • GMAIL_USER + GMAIL_APP_PASSWORD\n');
+    console.warn('  Gmail API (works on Render): GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN + GMAIL_USER');
+    console.warn('  Gmail SMTP (local only): GMAIL_USER + GMAIL_APP_PASSWORD');
+    console.warn('  Resend: RESEND_API_KEY\n');
     return;
   }
 
-  if (hasGmail) {
-    console.log('📧 Testing Gmail SMTP connection...');
+  if (hasGmailAPI) {
+    console.log('Email provider configured: Gmail API (OAuth2)');
+    console.log('OTP emails will be sent from:', process.env.GMAIL_USER);
+  } else if (hasGmailSMTP) {
+    console.log('Testing Gmail SMTP connection...');
     try {
-      // Verify Gmail SMTP connection
-      const transporter = getGmailTransporter(); // Ensure transporter is created here
+      const transporter = getGmailTransporter();
       await transporter.verify();
-      console.log('✅ Gmail SMTP connection verified successfully');
-      console.log('✅ OTP emails will be sent from:', process.env.GMAIL_USER);
+      console.log('Gmail SMTP connection verified successfully');
+      console.log('OTP emails will be sent from:', process.env.GMAIL_USER);
+      console.log('NOTE: SMTP may not work on Render (ports blocked). Consider Gmail API instead.');
     } catch (error: any) {
-      console.error('❌ Gmail SMTP verification failed:', error.message);
-      console.error('❌ Full error:', error);
-      console.error('⚠️  OTP emails will NOT work. Please check:');
-      console.error('   1. GMAIL_APP_PASSWORD is correct (16 characters, no spaces)');
-      console.error('   2. 2-Step Verification is enabled in Google Account');
-      console.error('   3. App Password was generated recently');
+      console.error('Gmail SMTP verification failed:', error.message);
+      console.error('OTP emails will NOT work. SMTP ports may be blocked.');
+      console.error('Consider switching to Gmail API for production deployment.');
     }
+  } else if (hasResend) {
+    console.log('Email provider configured: Resend');
   }
 }
