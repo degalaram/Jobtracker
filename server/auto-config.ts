@@ -1,3 +1,4 @@
+
 // Auto-configuration system for automatic setup when importing from GitHub
 
 export function autoConfigureEnvironment() {
@@ -7,12 +8,12 @@ export function autoConfigureEnvironment() {
   if (process.env.DATABASE_URL) {
     const dbUrl = process.env.DATABASE_URL;
 
-    if (dbUrl.includes('supabase.co') && !dbUrl.includes('sslmode')) {
-      console.warn('⚠️  Supabase DATABASE_URL detected without SSL mode');
-      console.warn('   Please update your DATABASE_URL to include: ?sslmode=require');
-      console.warn('   Example: postgresql://user:pass@host:5432/db?sslmode=require\n');
-    } else if (dbUrl.includes('supabase.co') && dbUrl.includes('sslmode')) {
-      console.log('✓ Supabase database configured with SSL');
+    if (dbUrl.includes('neon.tech')) {
+      console.log('✓ Neon database detected');
+    } else if (dbUrl.includes('supabase.co')) {
+      console.log('✓ Supabase database detected');
+    } else if (dbUrl.includes('replit.com')) {
+      console.log('✓ Replit PostgreSQL database detected');
     } else {
       console.log('✓ Database URL configured');
     }
@@ -67,7 +68,7 @@ export function autoFixDatabaseUrl(): string {
     console.log('      • Unlimited time - never expires');
     console.log('      • 7-day automatic backups');
     console.log('      • 10 free projects');
-    console.log('      • Perfect for Render deployment\n');
+    console.log('      • Perfect for Replit deployment\n');
     return '';
   }
 
@@ -109,13 +110,31 @@ export function autoFixDatabaseUrl(): string {
       console.log('✅ Fixed Neon URL:', fixedUrl.substring(0, 50) + '...');
       return fixedUrl;
     }
+    
+    console.log('✅ Using Neon URL as-is:', fixedUrl.substring(0, 50) + '...');
+    return fixedUrl;
   }
 
-  // Check if it's a Supabase URL without SSL mode
-  if (dbUrl.includes('supabase.co') && !dbUrl.includes('sslmode=')) {
-    const fixedUrl = dbUrl + '?sslmode=require';
-    console.log('🔧 Auto-fixed Supabase URL to include SSL mode');
-    console.log('✅ Fixed Supabase URL:', fixedUrl.substring(0, 50) + '...');
+  // Auto-fix Supabase URLs
+  if (dbUrl.includes('supabase.co')) {
+    let fixedUrl = dbUrl.trim();
+    fixedUrl = fixedUrl.replace(/^['"]|['"]$/g, '');
+    
+    // Supabase should NOT have sslmode parameter - remove it if present
+    if (fixedUrl.includes('?sslmode=')) {
+      fixedUrl = fixedUrl.replace(/\?sslmode=[^&]*/, '');
+      console.log('🔧 Removed sslmode parameter from Supabase URL (not needed)');
+    } else if (fixedUrl.includes('&sslmode=')) {
+      fixedUrl = fixedUrl.replace(/&sslmode=[^&]*/, '');
+      console.log('🔧 Removed sslmode parameter from Supabase URL (not needed)');
+    }
+    
+    if (fixedUrl !== dbUrl.trim()) {
+      console.log('✅ Fixed Supabase URL:', fixedUrl.substring(0, 50) + '...');
+      return fixedUrl;
+    }
+    
+    console.log('✅ Using Supabase URL as-is:', fixedUrl.substring(0, 50) + '...');
     return fixedUrl;
   }
 
