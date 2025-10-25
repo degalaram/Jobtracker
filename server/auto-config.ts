@@ -89,6 +89,13 @@ export function autoFixDatabaseUrl(): string {
     // Clean up any trailing ampersands or question marks
     fixedUrl = fixedUrl.replace(/[?&]$/, '');
     
+    // Ensure sslmode=require is present
+    if (!fixedUrl.includes('sslmode=')) {
+      const separator = fixedUrl.includes('?') ? '&' : '?';
+      fixedUrl = `${fixedUrl}${separator}sslmode=require`;
+      console.log('🔧 Added sslmode=require to Neon URL');
+    }
+    
     // Use pooled connection for better performance if not already using it
     if (!fixedUrl.includes('-pooler.')) {
       const pooledUrl = fixedUrl.replace(/(ep-[^.]+)\./, '$1-pooler.');
