@@ -73,7 +73,10 @@ export function autoFixDatabaseUrl(): string {
 
   // Auto-fix Neon URLs
   if (dbUrl.includes('neon.tech')) {
-    let fixedUrl = dbUrl;
+    let fixedUrl = dbUrl.trim();
+    
+    // Remove any surrounding quotes
+    fixedUrl = fixedUrl.replace(/^['"]|['"]$/g, '');
     
     // Remove unsupported channel_binding parameter
     if (fixedUrl.includes('channel_binding=')) {
@@ -81,13 +84,19 @@ export function autoFixDatabaseUrl(): string {
       console.log('🔧 Removed unsupported channel_binding parameter from Neon URL');
     }
     
+    // Clean up any trailing ampersands or question marks
+    fixedUrl = fixedUrl.replace(/[?&]$/, '');
+    
     // Use pooled connection for better performance if not already using it
     if (!fixedUrl.includes('-pooler.')) {
-      fixedUrl = fixedUrl.replace(/ep-[^.]+\./, (match) => match.slice(0, -1) + '-pooler.');
-      console.log('🔧 Auto-optimized Neon URL to use connection pooling');
+      const pooledUrl = fixedUrl.replace(/(ep-[^.]+)\./, '$1-pooler.');
+      if (pooledUrl !== fixedUrl) {
+        fixedUrl = pooledUrl;
+        console.log('🔧 Auto-optimized Neon URL to use connection pooling');
+      }
     }
     
-    if (fixedUrl !== dbUrl) {
+    if (fixedUrl !== dbUrl.trim()) {
       return fixedUrl;
     }
   }
