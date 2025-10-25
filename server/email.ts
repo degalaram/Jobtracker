@@ -35,17 +35,25 @@ function getGmailTransporter() {
     throw new Error('Gmail credentials not configured');
   }
 
+  console.log('📧 Gmail Config:');
+  console.log('   User:', gmailUser);
+  console.log('   Password length:', gmailPassword.length, '(should be 16)');
+
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 587,
     secure: false,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
     auth: {
       user: gmailUser,
       pass: gmailPassword,
     },
     tls: {
       rejectUnauthorized: false
-    }
+    },
+    debug: true
   });
 }
 
