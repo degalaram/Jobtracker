@@ -11,17 +11,17 @@ function detectEmailProvider(): EmailProvider {
   console.log('  RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET');
   console.log('  GMAIL_USER:', process.env.GMAIL_USER ? process.env.GMAIL_USER : 'NOT SET');
   console.log('  GMAIL_APP_PASSWORD:', process.env.GMAIL_APP_PASSWORD ? 'SET (length: ' + process.env.GMAIL_APP_PASSWORD.length + ')' : 'NOT SET');
-  
+
   // Check for Resend API key (preferred for portability)
   if (process.env.RESEND_API_KEY) {
     return 'resend';
   }
-  
+
   // Check for Gmail credentials
   if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
     return 'gmail';
   }
-  
+
   return 'none';
 }
 
@@ -58,7 +58,7 @@ async function sendViaResend(
 ): Promise<boolean> {
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
-    
+
     const { error } = await resend.emails.send({
       from: 'Daily Tracker <onboarding@resend.dev>',
       to: [to],
@@ -101,13 +101,13 @@ async function sendViaGmail(
     return true;
   } catch (error: any) {
     console.error(`Gmail send failed:`, error.message);
-    
+
     if (error.code === 'EAUTH') {
       console.error(`  → Authentication failed. Check GMAIL_USER and GMAIL_APP_PASSWORD`);
     } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
       console.error(`  → Connection failed. Check internet connection.`);
     }
-    
+
     return false;
   }
 }
@@ -136,14 +136,14 @@ function getEmailHTML(username: string, otp: string): string {
         <div class="content">
           <p>Hello <strong>${username}</strong>,</p>
           <p>You requested a One-Time Password (OTP) for your account. Please use the code below to continue:</p>
-          
+
           <div class="otp-box">
             <div class="otp-code">${otp}</div>
           </div>
-          
+
           <p><strong>Important:</strong> This code will expire in 5 minutes for security purposes.</p>
           <p>If you didn't request this code, please ignore this email or contact support if you have concerns.</p>
-          
+
           <p>Best regards,<br><strong>Daily Tracker Team</strong></p>
         </div>
         <div class="footer">
@@ -163,14 +163,14 @@ export async function sendOTPEmail(
   subject: string = 'Your OTP Code'
 ): Promise<boolean> {
   const provider = detectEmailProvider();
-  
+
   console.log(`Attempting to send OTP to ${to} using provider: ${provider}`);
-  
+
   // Try providers in order of preference
   if (provider === 'resend') {
     const success = await sendViaResend(to, username, otp, subject);
     if (success) return true;
-    
+
     // If Resend fails, try Gmail as fallback
     console.log('Resend failed, trying Gmail as fallback...');
     if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
@@ -179,7 +179,7 @@ export async function sendOTPEmail(
   } else if (provider === 'gmail') {
     return await sendViaGmail(to, username, otp, subject);
   }
-  
+
   // No provider available
   console.error('✗ Failed to send OTP: No email provider configured');
   console.error('Please configure one of the following:');
@@ -189,31 +189,33 @@ export async function sendOTPEmail(
 }
 
 // Verify email configuration on startup (non-blocking)
-export async function verifyEmailConfig(): Promise<boolean> {
-  const provider = detectEmailProvider();
-  
-  if (provider === 'none') {
+export async function verifyEmailConfig(): Promise<void> {
+  const hasResend = !!process.env.RESEND_API_KEY;
+  const hasGmail = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+
+  if (!hasResend && !hasGmail) {
     console.warn('\n⚠️  Email provider not configured - OTP emails will fail');
     console.warn('To enable OTP email functionality, configure one of:');
     console.warn('  • RESEND_API_KEY (recommended for portability)');
     console.warn('  • GMAIL_USER + GMAIL_APP_PASSWORD\n');
-    return false;
+    return;
   }
-  
-  console.log(`✓ Email provider configured: ${provider.toUpperCase()}`);
-  
-  // Test connection for Gmail
-  if (provider === 'gmail') {
+
+  if (hasGmail) {
+    console.log('📧 Testing Gmail SMTP connection...');
     try {
-      const transporter = getGmailTransporter();
+      // Verify Gmail SMTP connection
+      const transporter = getGmailTransporter(); // Ensure transporter is created here
       await transporter.verify();
-      console.log('✓ Gmail SMTP connection verified');
-      return true;
+      console.log('✅ Gmail SMTP connection verified successfully');
+      console.log('✅ OTP emails will be sent from:', process.env.GMAIL_USER);
     } catch (error: any) {
-      console.error(`✗ Gmail verification failed: ${error.message}`);
-      return false;
+      console.error('❌ Gmail SMTP verification failed:', error.message);
+      console.error('❌ Full error:', error);
+      console.error('⚠️  OTP emails will NOT work. Please check:');
+      console.error('   1. GMAIL_APP_PASSWORD is correct (16 characters, no spaces)');
+      console.error('   2. 2-Step Verification is enabled in Google Account');
+      console.error('   3. App Password was generated recently');
     }
   }
-  
-  return true;
 }
