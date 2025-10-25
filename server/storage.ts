@@ -29,15 +29,16 @@ try {
       idleTimeoutMillis: 30000,
     });
 
-    // Test the connection
+    // Test the connection with better error handling
     pool.query('SELECT NOW()', (err, res) => {
       if (err) {
-        console.error('Database connection test failed:', err.message);
-        console.warn('Falling back to in-memory storage - Data will be lost on restart!');
+        console.error('❌ Database connection test failed:', err.message);
+        console.error('Error details:', err);
+        console.warn('⚠️  Falling back to in-memory storage - Data will be lost on restart!');
         useInMemoryStorage = true;
       } else {
-        console.log('Database connected successfully at:', res.rows[0].now);
-        console.log('Data will persist permanently in PostgreSQL');
+        console.log('✅ Database connected successfully at:', res.rows[0].now);
+        console.log('✅ Data will persist permanently in PostgreSQL');
       }
     });
 
@@ -864,7 +865,6 @@ export class DatabaseStorage implements IStorage {
     this.userQuotas.delete(userId)
   }
 
-  // Notes methods
-}
+  }
 
 export const storage = new DatabaseStorage();
