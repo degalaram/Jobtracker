@@ -96,14 +96,18 @@ async function sendViaGmail(
       text: `Hello ${username},\n\nYour OTP code is: ${otp}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nDaily Tracker Team`,
     };
 
-    await transporter.sendMail(mailOptions);
+    console.log(`📧 Attempting to send email to ${to}...`);
+    const info = await transporter.sendMail(mailOptions);
     console.log(`✓ OTP email sent successfully via Gmail to ${to}`);
+    console.log(`✓ Message ID: ${info.messageId}`);
     return true;
   } catch (error: any) {
-    console.error(`Gmail send failed:`, error.message);
+    console.error(`❌ Gmail send failed:`, error.message);
+    console.error(`Full error:`, error);
 
     if (error.code === 'EAUTH') {
       console.error(`  → Authentication failed. Check GMAIL_USER and GMAIL_APP_PASSWORD`);
+      console.error(`  → Make sure 2-Step Verification is enabled and App Password is valid`);
     } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
       console.error(`  → Connection failed. Check internet connection.`);
     }
