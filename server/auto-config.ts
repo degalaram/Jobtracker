@@ -71,6 +71,8 @@ export function autoFixDatabaseUrl(): string {
     return '';
   }
 
+  console.log('🔍 Original DATABASE_URL:', dbUrl.substring(0, 50) + '...');
+
   // Auto-fix Neon URLs
   if (dbUrl.includes('neon.tech')) {
     let fixedUrl = dbUrl.trim();
@@ -97,6 +99,7 @@ export function autoFixDatabaseUrl(): string {
     }
     
     if (fixedUrl !== dbUrl.trim()) {
+      console.log('✅ Fixed Neon URL:', fixedUrl.substring(0, 50) + '...');
       return fixedUrl;
     }
   }
@@ -105,8 +108,10 @@ export function autoFixDatabaseUrl(): string {
   if (dbUrl.includes('supabase.co') && !dbUrl.includes('sslmode=')) {
     const fixedUrl = dbUrl + '?sslmode=require';
     console.log('🔧 Auto-fixed Supabase URL to include SSL mode');
+    console.log('✅ Fixed Supabase URL:', fixedUrl.substring(0, 50) + '...');
     return fixedUrl;
   }
 
+  console.log('✅ Using DATABASE_URL as-is:', dbUrl.substring(0, 50) + '...');
   return dbUrl;
 }
