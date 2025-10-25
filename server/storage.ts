@@ -8,7 +8,7 @@ import { nanoid } from "nanoid";
 import { autoFixDatabaseUrl } from "./auto-config"; // Assuming nanoid is available for generating IDs
 
 neonConfig.webSocketConstructor = ws;
-neonConfig.useSecureWebSocket = false;
+neonConfig.useSecureWebSocket = true;
 neonConfig.pipelineConnect = false;
 
 // Setup Neon database connection with WebSocket polyfill
@@ -436,13 +436,13 @@ export class DatabaseStorage implements IStorage {
       }
 
       // In-memory fallback
-      this.otpStore.set(`${identifier}:${type}`, { otp, expiresAt });
+      this.otpStore.set(`${identifier}:${type}`, { identifier, otp, type, expiresAt });
       console.log(`OTP stored in memory for ${identifier} (${type})`);
     } catch (error) {
       console.error('Error storing OTP:', error);
       // Fallback to in-memory
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-      this.otpStore.set(`${identifier}:${type}`, { otp, expiresAt });
+      this.otpStore.set(`${identifier}:${type}`, { identifier, otp, type, expiresAt });
       console.log(`OTP stored in memory for ${identifier} (${type})`);
     }
   }
@@ -848,9 +848,6 @@ export class DatabaseStorage implements IStorage {
       return memoryStore.notes.delete(id);
     }
   }
-
-  // Quota tracking (in-memory, resets on logout or server restart)
-  private userQuotas: Map<string, number> = new Map()
 
   async getUserQuota(userId: string): Promise<number> {
     return this.userQuotas.get(userId) || 0
