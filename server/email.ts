@@ -41,17 +41,14 @@ function getGmailTransporter() {
 
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
+    port: 465,
+    secure: true,
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
     auth: {
       user: gmailUser,
       pass: gmailPassword,
-    },
-    tls: {
-      rejectUnauthorized: false
     },
     debug: true
   });
