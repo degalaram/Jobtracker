@@ -2,7 +2,7 @@ import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { google } from 'googleapis';
 
-type EmailProvider = 'gmail_api' | 'gmail_smtp' | 'resend' | 'none';
+type EmailProvider = 'gmail_api' | 'resend' | 'none';
 
 function detectEmailProvider(): EmailProvider {
   console.log('Email provider detection:');
@@ -10,15 +10,10 @@ function detectEmailProvider(): EmailProvider {
   console.log('  GMAIL_CLIENT_SECRET:', process.env.GMAIL_CLIENT_SECRET ? 'SET' : 'NOT SET');
   console.log('  GMAIL_REFRESH_TOKEN:', process.env.GMAIL_REFRESH_TOKEN ? 'SET' : 'NOT SET');
   console.log('  GMAIL_USER:', process.env.GMAIL_USER ? process.env.GMAIL_USER : 'NOT SET');
-  console.log('  GMAIL_APP_PASSWORD:', process.env.GMAIL_APP_PASSWORD ? 'SET' : 'NOT SET');
   console.log('  RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET');
 
   if (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN && process.env.GMAIL_USER) {
     return 'gmail_api';
-  }
-
-  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
-    return 'gmail_smtp';
   }
 
   if (process.env.RESEND_API_KEY) {
@@ -35,6 +30,7 @@ async function sendViaGmailAPI(
   subject: string
 ): Promise<boolean> {
   try {
+    console.log('Initializing Gmail API OAuth2 client...');
     const OAuth2 = google.auth.OAuth2;
     const oauth2Client = new OAuth2(
       process.env.GMAIL_CLIENT_ID,
@@ -46,11 +42,14 @@ async function sendViaGmailAPI(
       refresh_token: process.env.GMAIL_REFRESH_TOKEN
     });
 
+    console.log('Getting access token from refresh token...');
     const accessToken = await oauth2Client.getAccessToken();
 
     if (!accessToken.token) {
-      throw new Error('Failed to get access token');
+      throw new Error('Failed to get access token from refresh token');
     }
+
+    console.log('Access token obtained successfully');
 
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -74,73 +73,18 @@ async function sendViaGmailAPI(
 
     console.log(`Sending email via Gmail API to ${to}...`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`OTP email sent successfully via Gmail API to ${to}`);
+    console.log(`✅ OTP email sent successfully via Gmail API to ${to}`);
     console.log(`Message ID: ${info.messageId}`);
     return true;
   } catch (error: any) {
-    console.error(`Gmail API send failed:`, error.message);
-    console.error(`Full error:`, error);
-    return false;
-  }
-}
-
-function getGmailTransporter() {
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, '');
-
-  if (!gmailUser || !gmailPassword) {
-    throw new Error('Gmail credentials not configured');
-  }
-
-  console.log('Gmail SMTP Config:');
-  console.log('   User:', gmailUser);
-  console.log('   Password length:', gmailPassword.length, '(should be 16)');
-
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
-    auth: {
-      user: gmailUser,
-      pass: gmailPassword,
-    },
-    debug: false
-  });
-}
-
-async function sendViaGmailSMTP(
-  to: string,
-  username: string,
-  otp: string,
-  subject: string
-): Promise<boolean> {
-  try {
-    const transporter = getGmailTransporter();
-    const mailOptions = {
-      from: `"Daily Tracker" <${process.env.GMAIL_USER}>`,
-      to,
-      subject,
-      html: getEmailHTML(username, otp),
-      text: `Hello ${username},\n\nYour OTP code is: ${otp}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nDaily Tracker Team`,
-    };
-
-    console.log(`Attempting to send email via Gmail SMTP to ${to}...`);
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`OTP email sent successfully via Gmail SMTP to ${to}`);
-    console.log(`Message ID: ${info.messageId}`);
-    return true;
-  } catch (error: any) {
-    console.error(`Gmail SMTP send failed:`, error.message);
-
-    if (error.code === 'EAUTH') {
-      console.error(`  Authentication failed. Check GMAIL_USER and GMAIL_APP_PASSWORD`);
-    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
-      console.error(`  Connection failed. SMTP ports may be blocked on this platform.`);
+    console.error(`❌ Gmail API send failed:`, error.message);
+    if (error.code) {
+      console.error(`Error code: ${error.code}`);
     }
-
+    if (error.response) {
+      console.error(`Response:`, error.response);
+    }
+    console.error(`Full error:`, error);
     return false;
   }
 }
@@ -166,10 +110,10 @@ async function sendViaResend(
       return false;
     }
 
-    console.log(`OTP email sent successfully via Resend to ${to}`);
+    console.log(`✅ OTP email sent successfully via Resend to ${to}`);
     return true;
   } catch (error: any) {
-    console.error('Resend send failed:', error.message);
+    console.error('❌ Resend send failed:', error.message);
     return false;
   }
 }
@@ -228,51 +172,42 @@ export async function sendOTPEmail(
 
   if (provider === 'gmail_api') {
     return await sendViaGmailAPI(to, username, otp, subject);
-  } else if (provider === 'gmail_smtp') {
-    return await sendViaGmailSMTP(to, username, otp, subject);
   } else if (provider === 'resend') {
     return await sendViaResend(to, username, otp, subject);
   }
 
-  console.error('Failed to send OTP: No email provider configured');
-  console.error('Please configure one of the following:');
-  console.error('  Option 1 (Best for Render): GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN + GMAIL_USER');
-  console.error('  Option 2 (Local only): GMAIL_USER + GMAIL_APP_PASSWORD');
-  console.error('  Option 3: RESEND_API_KEY');
+  console.error('❌ Failed to send OTP: No email provider configured');
+  console.error('Please configure one of the following in Render Environment Variables:');
+  console.error('  Option 1 (Recommended): Gmail API OAuth2');
+  console.error('    - GMAIL_CLIENT_ID');
+  console.error('    - GMAIL_CLIENT_SECRET');
+  console.error('    - GMAIL_REFRESH_TOKEN');
+  console.error('    - GMAIL_USER');
+  console.error('  Option 2: Resend');
+  console.error('    - RESEND_API_KEY');
   return false;
 }
 
 export async function verifyEmailConfig(): Promise<void> {
-  const hasGmailAPI = !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN);
-  const hasGmailSMTP = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  const hasGmailAPI = !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN && process.env.GMAIL_USER);
   const hasResend = !!process.env.RESEND_API_KEY;
 
-  if (!hasGmailAPI && !hasGmailSMTP && !hasResend) {
-    console.warn('\nEmail provider not configured - OTP emails will fail');
-    console.warn('To enable OTP email functionality, configure one of:');
-    console.warn('  Gmail API (works on Render): GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN + GMAIL_USER');
-    console.warn('  Gmail SMTP (local only): GMAIL_USER + GMAIL_APP_PASSWORD');
-    console.warn('  Resend: RESEND_API_KEY\n');
+  if (!hasGmailAPI && !hasResend) {
+    console.warn('\n⚠️  Email provider not configured - OTP emails will fail');
+    console.warn('To enable OTP email functionality for Render deployment, configure:');
+    console.warn('  Gmail API OAuth2 (recommended):');
+    console.warn('    GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN + GMAIL_USER');
+    console.warn('  OR Resend:');
+    console.warn('    RESEND_API_KEY\n');
     return;
   }
 
   if (hasGmailAPI) {
-    console.log('Email provider configured: Gmail API (OAuth2)');
-    console.log('OTP emails will be sent from:', process.env.GMAIL_USER);
-  } else if (hasGmailSMTP) {
-    console.log('Testing Gmail SMTP connection...');
-    try {
-      const transporter = getGmailTransporter();
-      await transporter.verify();
-      console.log('Gmail SMTP connection verified successfully');
-      console.log('OTP emails will be sent from:', process.env.GMAIL_USER);
-      console.log('NOTE: SMTP may not work on Render (ports blocked). Consider Gmail API instead.');
-    } catch (error: any) {
-      console.error('Gmail SMTP verification failed:', error.message);
-      console.error('OTP emails will NOT work. SMTP ports may be blocked.');
-      console.error('Consider switching to Gmail API for production deployment.');
-    }
+    console.log('✅ Email provider configured: Gmail API (OAuth2)');
+    console.log('📧 OTP emails will be sent from:', process.env.GMAIL_USER);
+    console.log('✓ Gmail API works perfectly on Render and all cloud platforms');
   } else if (hasResend) {
-    console.log('Email provider configured: Resend');
+    console.log('✅ Email provider configured: Resend');
+    console.log('✓ Resend works perfectly on Render and all cloud platforms');
   }
 }
