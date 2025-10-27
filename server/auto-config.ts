@@ -1,52 +1,37 @@
-
 // Auto-configuration system for automatic setup when importing from GitHub
-
 export function autoConfigureEnvironment() {
   console.log('\n=== Auto-Configuration Check ===\n');
 
-  // Check Database Configuration
+  // Check database
   if (process.env.DATABASE_URL) {
-    const dbUrl = process.env.DATABASE_URL;
-
-    if (dbUrl.includes('neon.tech')) {
-      console.log('✓ Neon database detected');
-    } else if (dbUrl.includes('supabase.co')) {
-      console.log('✓ Supabase database detected');
-    } else if (dbUrl.includes('replit.com')) {
-      console.log('✓ Replit PostgreSQL database detected');
-    } else {
-      console.log('✓ Database URL configured');
-    }
+    console.log('✓ Database URL configured');
   } else {
-    console.log('ℹ Using in-memory storage (data will be lost on restart)');
-    console.log('  To enable persistent storage:');
-    console.log('  - Add DATABASE_URL to Secrets in Replit');
-    console.log('  - Or use Replit\'s built-in PostgreSQL database\n');
+    console.log('⚠️  No DATABASE_URL found - using in-memory storage');
   }
 
-  // Check Email Configuration
-  const hasResend = !!process.env.RESEND_API_KEY;
-  const hasGmail = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  // Check email (Gmail SMTP)
+  const hasGmailSMTP = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
 
-  if (!hasResend && !hasGmail) {
-    console.warn('⚠️  No email provider configured');
-    console.warn('   OTP emails (forgot password, login) will not work');
-    console.warn('   To fix: Add one of these to Secrets:');
-    console.warn('   Option 1: RESEND_API_KEY (recommended)');
-    console.warn('   Option 2: GMAIL_USER + GMAIL_APP_PASSWORD\n');
+  if (hasGmailSMTP) {
+    console.log('✓ Gmail SMTP configured');
+  } else {
+    console.log('⚠️  No email provider configured');
+    console.log('   OTP emails (forgot password, login) will not work');
+    console.log('   To fix: Add these to Replit Secrets:');
+    console.log('   - GMAIL_USER (your Gmail address)');
+    console.log('   - GMAIL_APP_PASSWORD (16-char App Password)');
   }
 
-  // Check Session Secret
-  if (!process.env.SESSION_SECRET) {
-    console.log('ℹ Using default SESSION_SECRET (not recommended for production)');
-    console.log('  Add SESSION_SECRET to Secrets for better security\n');
-  } else {
+  // Check session secret
+  if (process.env.SESSION_SECRET) {
     console.log('✓ SESSION_SECRET configured');
+  } else {
+    console.log('⚠️  SESSION_SECRET not set - using default (not secure for production)');
   }
 
-  // Check Node Environment
-  const nodeEnv = process.env.NODE_ENV || 'development';
-  console.log(`✓ Running in ${nodeEnv} mode`);
+  // Check environment
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  console.log(`✓ Running in ${isDevelopment ? 'development' : 'production'} mode`);
 
   console.log('\n=== Configuration Check Complete ===\n');
 }
