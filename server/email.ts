@@ -1,17 +1,83 @@
+
+
+
 import nodemailer from 'nodemailer';
 
-type EmailProvider = 'gmail_smtp' | 'none';
+type EmailProvider = 'gmail_oauth' | 'gmail_smtp' | 'none';
 
 function detectEmailProvider(): EmailProvider {
   console.log('Email provider detection:');
   console.log('  GMAIL_USER:', process.env.GMAIL_USER ? 'SET' : 'NOT SET');
+  console.log('  GMAIL_CLIENT_ID:', process.env.GMAIL_CLIENT_ID ? 'SET' : 'NOT SET');
+  console.log('  GMAIL_CLIENT_SECRET:', process.env.GMAIL_CLIENT_SECRET ? 'SET' : 'NOT SET');
+  console.log('  GMAIL_REFRESH_TOKEN:', process.env.GMAIL_REFRESH_TOKEN ? 'SET' : 'NOT SET');
   console.log('  GMAIL_APP_PASSWORD:', process.env.GMAIL_APP_PASSWORD ? 'SET' : 'NOT SET');
+
+  if (process.env.GMAIL_USER && process.env.GMAIL_CLIENT_ID && 
+      process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN) {
+    return 'gmail_oauth';
+  }
 
   if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
     return 'gmail_smtp';
   }
 
   return 'none';
+}
+
+async function sendViaGmailOAuth(
+  to: string,
+  username: string,
+  otp: string,
+  subject: string
+): Promise<boolean> {
+  try {
+    console.log('Creating Gmail OAuth2 transporter...');
+    console.log('GMAIL_USER:', process.env.GMAIL_USER);
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        type: 'OAuth2',
+        user: process.env.GMAIL_USER,
+        clientId: process.env.GMAIL_CLIENT_ID,
+        clientSecret: process.env.GMAIL_CLIENT_SECRET,
+        refreshToken: process.env.GMAIL_REFRESH_TOKEN
+      }
+    });
+
+    const mailOptions = {
+      from: `"Daily Tracker" <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html: getEmailHTML(username, otp),
+      text: `Hello ${username},\n\nYour OTP code is: ${otp}\n\nThis code will expire in 5 minutes.\n\nBest regards,\nDaily Tracker Team`,
+    };
+
+    console.log(`Sending email via Gmail OAuth2 to ${to}...`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ OTP email sent successfully via Gmail OAuth2 to ${to}`);
+    console.log(`Message ID: ${info.messageId}`);
+    return true;
+  } catch (error: any) {
+    console.error(`❌ Gmail OAuth2 send failed:`, error.message);
+    console.error('Full error:', JSON.stringify(error, null, 2));
+    
+    if (error.code) {
+      console.error(`Error code: ${error.code}`);
+    }
+    if (error.response) {
+      console.error(`Response:`, error.response);
+    }
+    if (error.responseCode) {
+      console.error(`Response code: ${error.responseCode}`);
+    }
+
+    return false;
+  }
 }
 
 async function sendViaGmailSMTP(
@@ -142,58 +208,86 @@ export async function sendOTPEmail(
 
   console.log(`Attempting to send OTP to ${to} using provider: ${provider}`);
 
+  if (provider === 'gmail_oauth') {
+    return await sendViaGmailOAuth(to, username, otp, subject);
+  }
+
   if (provider === 'gmail_smtp') {
     return await sendViaGmailSMTP(to, username, otp, subject);
   }
 
-  console.error('❌ Failed to send OTP: Gmail SMTP not configured');
-  console.error('Please add these to Replit Secrets:');
+  console.error('❌ Failed to send OTP: No email provider configured');
+  console.error('Please add one of these to Replit Secrets:');
+  console.error('');
+  console.error('Option 1 - Gmail OAuth2 (Recommended):');
+  console.error('  GMAIL_USER - Your Gmail address');
+  console.error('  GMAIL_CLIENT_ID - OAuth2 Client ID');
+  console.error('  GMAIL_CLIENT_SECRET - OAuth2 Client Secret');
+  console.error('  GMAIL_REFRESH_TOKEN - OAuth2 Refresh Token');
+  console.error('');
+  console.error('Option 2 - Gmail App Password:');
   console.error('  GMAIL_USER - Your Gmail address');
   console.error('  GMAIL_APP_PASSWORD - Your Gmail App Password (16 characters)');
   return false;
 }
 
 export async function verifyEmailConfig(): Promise<void> {
+  const hasGmailOAuth = !!(process.env.GMAIL_USER && process.env.GMAIL_CLIENT_ID && 
+                          process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN);
   const hasGmailSMTP = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
 
-  if (!hasGmailSMTP) {
-    console.warn('\n⚠️  Gmail SMTP not configured - OTP emails will fail');
-    console.warn('To enable OTP email functionality:');
-    console.warn('  1. Add environment variables:');
-    console.warn('     GMAIL_USER=your-email@gmail.com');
-    console.warn('     GMAIL_APP_PASSWORD=your-16-char-app-password');
-    console.warn('  2. Generate App Password from: https://myaccount.google.com/apppasswords');
-    console.warn('  3. Restart the application\n');
+  if (!hasGmailOAuth && !hasGmailSMTP) {
+    console.warn('\n⚠️  No email provider configured - OTP emails will fail');
+    console.warn('To enable OTP email functionality, choose one option:');
+    console.warn('');
+    console.warn('Option 1 - Gmail OAuth2 (Recommended):');
+    console.warn('  GMAIL_USER=your-email@gmail.com');
+    console.warn('  GMAIL_CLIENT_ID=your-client-id');
+    console.warn('  GMAIL_CLIENT_SECRET=your-client-secret');
+    console.warn('  GMAIL_REFRESH_TOKEN=your-refresh-token');
+    console.warn('');
+    console.warn('Option 2 - Gmail App Password:');
+    console.warn('  GMAIL_USER=your-email@gmail.com');
+    console.warn('  GMAIL_APP_PASSWORD=your-16-char-app-password');
+    console.warn('  Generate from: https://myaccount.google.com/apppasswords\n');
     return;
   }
 
   console.log('\n=== Email Configuration Status ===');
-  console.log('✅ Email provider configured: Gmail SMTP');
-  console.log('📧 Sender email:', process.env.GMAIL_USER);
-  console.log('🔑 App password length:', process.env.GMAIL_APP_PASSWORD?.length, 'characters');
   
-  // Test connection
-  try {
-    const nodemailer = await import('nodemailer');
-    const testTransporter = nodemailer.default.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD
-      }
-    });
-    
-    await testTransporter.verify();
-    console.log('✅ Gmail SMTP connection test: SUCCESS');
+  if (hasGmailOAuth) {
+    console.log('✅ Email provider configured: Gmail OAuth2');
+    console.log('📧 Sender email:', process.env.GMAIL_USER);
+    console.log('🔑 OAuth2 Client ID:', process.env.GMAIL_CLIENT_ID?.substring(0, 20) + '...');
+    console.log('✅ Gmail OAuth2 ready to send emails');
     console.log('=================================\n');
-  } catch (error: any) {
-    console.error('❌ Gmail SMTP connection test: FAILED');
-    console.error('Error:', error.message);
-    console.error('\n⚠️  TROUBLESHOOTING STEPS:');
-    console.error('1. Generate a NEW App Password (old ones may expire)');
-    console.error('2. Use the 16-character password (remove spaces)');
-    console.error('3. Enable 2-Step Verification on your Google account');
-    console.error('4. Check that GMAIL_USER is your full email address');
-    console.error('=================================\n');
+  } else if (hasGmailSMTP) {
+    console.log('✅ Email provider configured: Gmail SMTP');
+    console.log('📧 Sender email:', process.env.GMAIL_USER);
+    console.log('🔑 App password length:', process.env.GMAIL_APP_PASSWORD?.length, 'characters');
+    
+    try {
+      const nodemailer = await import('nodemailer');
+      const testTransporter = nodemailer.default.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.GMAIL_USER,
+          pass: process.env.GMAIL_APP_PASSWORD
+        }
+      });
+      
+      await testTransporter.verify();
+      console.log('✅ Gmail SMTP connection test: SUCCESS');
+      console.log('=================================\n');
+    } catch (error: any) {
+      console.error('❌ Gmail SMTP connection test: FAILED');
+      console.error('Error:', error.message);
+      console.error('\n⚠️  TROUBLESHOOTING STEPS:');
+      console.error('1. Generate a NEW App Password (old ones may expire)');
+      console.error('2. Use the 16-character password (remove spaces)');
+      console.error('3. Enable 2-Step Verification on your Google account');
+      console.error('4. Check that GMAIL_USER is your full email address');
+      console.error('=================================\n');
+    }
   }
 }
