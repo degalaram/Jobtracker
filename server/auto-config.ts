@@ -9,15 +9,25 @@ export function autoConfigureEnvironment() {
     console.log('⚠️  No DATABASE_URL found - using in-memory storage');
   }
 
-  // Check email (Gmail SMTP)
+  // Check email (Gmail OAuth2 or Gmail SMTP)
+  const hasGmailOAuth = !!(process.env.GMAIL_USER && process.env.GMAIL_CLIENT_ID && 
+                          process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN);
   const hasGmailSMTP = !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
 
-  if (hasGmailSMTP) {
+  if (hasGmailOAuth) {
+    console.log('✓ Gmail OAuth2 configured');
+  } else if (hasGmailSMTP) {
     console.log('✓ Gmail SMTP configured');
   } else {
     console.log('⚠️  No email provider configured');
     console.log('   OTP emails (forgot password, login) will not work');
     console.log('   To fix: Add these to Replit Secrets:');
+    console.log('   Option 1 - Gmail OAuth2:');
+    console.log('   - GMAIL_USER (your Gmail address)');
+    console.log('   - GMAIL_CLIENT_ID (OAuth2 Client ID)');
+    console.log('   - GMAIL_CLIENT_SECRET (OAuth2 Client Secret)');
+    console.log('   - GMAIL_REFRESH_TOKEN (OAuth2 Refresh Token)');
+    console.log('   Option 2 - Gmail App Password:');
     console.log('   - GMAIL_USER (your Gmail address)');
     console.log('   - GMAIL_APP_PASSWORD (16-char App Password)');
   }
